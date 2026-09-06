@@ -95,6 +95,13 @@ kexec(char *path, char **argv)
   uvmclear(pagetable, sz - (USERSTACK + 1) * PGSIZE);
   sp = sz;
   stackbase = sp - USERSTACK * PGSIZE;
+  
+  // Ejercicio 5: Inspeccion de Guard Page y User Stack
+  printk("[EXEC AUDIT] Proceso cargado (%s):\n", (char *)path);
+  printk("  -> Guard Page (0x%p): ", (void *)(sz - 2*PGSIZE));
+  inspect_pte(pagetable, sz - 2*PGSIZE);
+  printk("  -> Stack Page (0x%p): ", (void *)(sz - PGSIZE));
+  inspect_pte(pagetable, sz - PGSIZE);
 
   // Copy argument strings into new stack, remember their
   // addresses in ustack[].
