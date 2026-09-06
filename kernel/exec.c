@@ -95,7 +95,7 @@ kexec(char *path, char **argv)
   uvmclear(pagetable, sz - (USERSTACK + 1) * PGSIZE);
   sp = sz;
   stackbase = sp - USERSTACK * PGSIZE;
-  
+
   // Ejercicio 5: Inspeccion de Guard Page y User Stack
   printk("[EXEC AUDIT] Proceso cargado (%s):\n", (char *)path);
   printk("  -> Guard Page (0x%p): ", (void *)(sz - 2*PGSIZE));
@@ -143,6 +143,10 @@ kexec(char *path, char **argv)
   p->trapframe->epc = elf.entry; // initial program counter = ulib.c:start()
   p->trapframe->sp = sp;         // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  if (p->pid == 1) {
+    vmprint(p->pagetable);
+  }
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 

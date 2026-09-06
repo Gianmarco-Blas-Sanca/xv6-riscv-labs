@@ -519,3 +519,32 @@ inspect_pte(pagetable_t pagetable, uint64 va)
          (*pte & PTE_X) ? 'X' : '-',
          (*pte & PTE_U) ? 'U' : '-');
 }
+
+void
+vmprint_helper(pagetable_t pagetable, int level)
+{
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if (pte & PTE_V) {
+      if (level == 0)
+        printk("..%d: pte 0x%p pa 0x%p\n", i, (void *)pte, (void *)PTE2PA(pte));
+      else if (level == 1)
+        printk(".. ..%d: pte 0x%p pa 0x%p\n", i, (void *)pte, (void *)PTE2PA(pte));
+      else if (level == 2)
+        printk(".. .. ..%d: pte 0x%p pa 0x%p\n", i, (void *)pte, (void *)PTE2PA(pte));
+
+      // Si no es nodo hoja (no tiene R, W ni X activos), apunta a una tabla hija
+      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+        uint64 child = PTE2PA(pte);
+        vmprint_helper((pagetable_t)child, level + 1);
+      }
+    }
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printk("page table 0x%p\n", (void *)pagetable);
+  vmprint_helper(pagetable, 0);
+}
