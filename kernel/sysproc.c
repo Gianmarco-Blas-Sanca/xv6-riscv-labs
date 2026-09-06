@@ -117,3 +117,38 @@ sys_getfreemem(void)
   return count_free_bytes();
 }
 
+
+int
+sys_pgaccess(void)
+{
+  uint64 va;
+  int len;
+  uint64 user_mask_ptr;
+  struct proc *p = myproc();
+
+  // Recuperar argumentos: a0 = va, a1 = len, a2 = user_mask_ptr
+  argaddr(0, &va);
+  argint(1, &len);
+  argaddr(2, &user_mask_ptr);
+
+  if (len < 0 || len > 32)
+    return -1;
+
+  uint32 mask = 0;
+
+  for (int i = 0; i < len; i++) {
+    uint64 cur_va = va + (uint64)i * PGSIZE;
+    pte_t *pte = walk(p->pagetable, cur_va, 0);
+
+    if (pte != 0 && (*pte & PTE_V) && (*pte & PTE_A)) {
+      mask |= (1U << i);
+      *pte &= ~PTE_A; // Limpiar el bit de acceso
+    }
+  }
+
+  // Transferir la mascara calculada al espacio de usuario
+  if (copyout(p->pagetable, p->sz, user_mask_ptr, (char *)&mask, sizeof(mask)) < 0)
+    return -1;
+
+  return 0;
+}
