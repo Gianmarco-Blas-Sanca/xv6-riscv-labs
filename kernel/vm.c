@@ -219,6 +219,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
   char *mem;
   uint64 a;
+  uint64 orig_oldsz = oldsz; // Guardamos el valor original exacto
 
   if (newsz < oldsz)
     return oldsz;
@@ -227,17 +228,24 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   for (a = oldsz; a < newsz; a += PGSIZE) {
     mem = kalloc();
     if (mem == 0) {
-      uvmdealloc(pagetable, a, oldsz);
+      uvmdealloc(pagetable, a, orig_oldsz);
       return 0;
     }
     memset(mem, 0, PGSIZE);
-    if (mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_U | xperm) !=
-        0) {
+    if (mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_U | xperm) != 0) {
       kfree(mem);
-      uvmdealloc(pagetable, a, oldsz);
+      uvmdealloc(pagetable, a, orig_oldsz);
       return 0;
     }
   }
+
+  // Rastrear asignacion de memoria
+  if (newsz > orig_oldsz) {
+    uint64 npages = (PGROUNDUP(newsz) - oldsz) / PGSIZE;
+    printk("[HEAP TRACE] Expansión de Heap: %ld -> %ld bytes (+%ld paginas)\n",
+           orig_oldsz, newsz, npages);
+  }
+
   return newsz;
 }
 
