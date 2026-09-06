@@ -170,6 +170,7 @@ int             copyin(pagetable_t, uint64, char *, uint64, uint64);
 int             copyinstr(pagetable_t, uint64, char *, uint64, uint64);
 int             ismapped(pagetable_t, uint64);
 uint64          vmfault(pagetable_t, uint64, uint64, int);
+void            inspect_pte(pagetable_t, uint64);
 
 // plic.c
 void            plicinit(void);

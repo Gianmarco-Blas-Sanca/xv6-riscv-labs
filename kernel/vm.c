@@ -489,3 +489,25 @@ ismapped(pagetable_t pagetable, uint64 va)
   }
   return 0;
 }
+
+void
+inspect_pte(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  pte = walk(pagetable, va, 0);
+  if(pte == 0) {
+    printk("VA 0x%p: No existe mapeo en la tabla\n", (void *)va);
+    return;
+  }
+  if((*pte & PTE_V) == 0) {
+    printk("VA 0x%p: PTE Invalido\n", (void *)va);
+    return;
+  }
+  printk("VA 0x%p -> PA 0x%p | Permisos: %c%c%c%c\n",
+         (void *)va,
+         (void *)PTE2PA(*pte),
+         (*pte & PTE_R) ? 'R' : '-',
+         (*pte & PTE_W) ? 'W' : '-',
+         (*pte & PTE_X) ? 'X' : '-',
+         (*pte & PTE_U) ? 'U' : '-');
+}
