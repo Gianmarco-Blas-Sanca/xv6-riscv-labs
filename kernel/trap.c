@@ -66,18 +66,35 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if ((which_dev = devintr()) != 0) {
+  }else if((which_dev = devintr()) != 0){
     // ok
-  } else if ((r_scause() == 15 || r_scause() == 13) &&
-             vmfault(p->pagetable, p->sz, r_stval(),
-                     (r_scause() == 13) ? 1 : 0) != 0) {
+  }else if(r_scause() == 13 ||r_scause() == 15) { // 13: Load Page Fault, 15: Store Page Fault
+      uint64 va = r_stval(); // Direccion virtual que detono el trap
+
+    // Correccion 1: Validacion de limites de memoria
+    if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp)) {
+      p->killed = 1;
+    } else {
+      char *mem = kalloc();
+      if(mem == 0) {
+        p->killed = 1;
+      } else {
+        memset(mem, 0, PGSIZE);
+        uint64 a = PGROUNDDOWN(va);
+
+        // Correccion 2: Permisos completos con PTE_U y comprobacion de fallo
+        if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_U | PTE_V) != 0) {
+          kfree(mem);
+          p->killed = 1;
+      }
+    }
+  }
     // page fault on lazily-allocated page
   } else {
     printk("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printk("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
-  }
-
+   }
   if (killed(p))
     kexit(-1);
 

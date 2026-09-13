@@ -1,0 +1,13 @@
+Remote debugging using :26000
+0x0000000000001000 in ?? ()
+Breakpoint 1 at 0x800027dc: file kernel/trap.c, line 39.
+Continuing.
+
+Thread 1 hit Breakpoint 1, usertrap () at kernel/trap.c:39
+39	{
+42	  if ((r_sstatus() & SSTATUS_SPP) != 0)
+usertrap () at kernel/riscv.h:55
+55	  return x;
+❌️ value has been optimized out
+$1 = 0x0
+$2 = 0x8
