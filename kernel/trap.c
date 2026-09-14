@@ -68,35 +68,39 @@ usertrap(void)
     syscall();
   }else if((which_dev = devintr()) != 0){
     // ok
-  }else if(r_scause() == 15) { 
-    uint64 va = r_stval(); 
+  // CAMBIO: Se atiende exclusivamente la excepción 15 (Store/AMO Page Fault para COW)
+  } else if(r_scause() == 15) {
+    uint64 va = r_stval(); // Direccion virtual que detono el trap
 
-    // 1. Validar limites de la memoria del proceso
-    if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp)) {
+    // CAMBIO: Se valida únicamente contra el límite superior p->sz (evita matar accesos válidos a memoria global/heap)
+    if(va >= p->sz) {
       p->killed = 1;
     } else {
+      // CAMBIO: Se busca la entrada en la tabla de páginas para la dirección virtual
       pte_t *pte = walk(p->pagetable, va, 0);
 
-      // 2. Verificar que la PTE exista, sea de usuario y tenga la bandera PTE_COW activa
+      // CAMBIO: Se comprueba que la página sea válida, accesible por el usuario y tenga activa la bandera PTE_COW
       if(pte != 0 && (*pte & PTE_V) && (*pte & PTE_U) && (*pte & PTE_COW)) {
-        uint64 pa = PTE2PA(*pte);
-        char *mem = kalloc();
+        uint64 pa = PTE2PA(*pte); // CAMBIO: Obtener la dirección física compartida actual
+        char *mem = kalloc();    // CAMBIO: Asignar una nueva página física exclusiva
+
         if(mem == 0) {
           p->killed = 1;
         } else {
-          // Copiar exactamente el contenido de la pagina compartida a la nueva
+          // CAMBIO: Duplicar exactamente los datos de la página compartida a la nueva página
           memmove(mem, (char*)pa, PGSIZE);
 
-          // Habilitar escritura (PTE_W) y quitar la bandera COW
+          // CAMBIO: Rehabilitar permiso de escritura (PTE_W) y apagar el bit de software PTE_COW
           uint flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
 
-          // Re-mapear la entrada de la tabla de paginas apuntando a la nueva direccion fisica
+          // CAMBIO: Re-mapear la PTE con la nueva dirección física y los nuevos permisos
           *pte = PA2PTE(mem) | flags;
 
-          // Decrementar referencia de la pagina anterior (se liberara si llega a 0)
+          // CAMBIO: Decrementar la referencia de la página física original (se libera si llega a 0)
           kfree((void*)pa);
         }
       } else {
+        // CAMBIO: Si no tenía PTE_COW o era inválida, se marca como proceso terminado
         p->killed = 1;
       }
     }

@@ -33,6 +33,11 @@ void
 ref_init(void)
 {
   initlock(&ref_lock, "ref_lock");
+  acquire(&ref_lock);
+  for(int i = 0; i < MAX_PAGES; i++) {
+    ref_count[i] = 0;
+  }
+  release(&ref_lock);
 }
 
 void
@@ -50,8 +55,13 @@ dec_ref(uint64 pa)
   int idx = PA2INDEX(pa);
   int count;
   acquire(&ref_lock);
-  ref_count[idx]--;
-  count = ref_count[idx];
+  if(ref_count[idx] <= 0) {
+    ref_count[idx] = 0;
+    count = 0;
+  } else {
+    ref_count[idx]--;
+    count = ref_count[idx];
+  }
   release(&ref_lock);
   return count;
 }

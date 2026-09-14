@@ -361,25 +361,33 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 psz, uint64 dstva, char *src, uint64 len)
 {
-   uint64 n, va0, pa0;
+  uint64 n, va0, pa0;
   pte_t *pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+
+    // [DIFERENCIA 1]: Validar contra psz (heredado de tu repo/Labo3)
+    if(va0 >= psz)
+      return -1;
+
     pte = walk(pagetable, va0, 0);
     if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
       return -1;
 
-    // Si la página del usuario es COW, resolver duplicación antes de escribir
+    // [DIFERENCIA 2]: Manejo COW requerido por la guia[cite: 4]
     if(*pte & PTE_COW){
       uint64 pa = PTE2PA(*pte);
-      char *mem = kalloc();
+      char *mem = kalloc(); // Asignar nueva pagina fisica[cite: 4]
       if(mem == 0)
         return -1;
-      memmove(mem, (char*)pa, PGSIZE);
-      uint flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
-      *pte = PA2PTE(mem) | flags;
-      kfree((void*)pa);
+      memmove(mem, (char*)pa, PGSIZE); // Copiar contenido[cite: 4]
+      uint flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW; // Activar PTE_W y quitar PTE_COW[cite: 4]
+      *pte = PA2PTE(mem) | flags; // Actualizar entrada en la tabla[cite: 4]
+      kfree((void*)pa); // Decrementar referencia de la pagina compartida anterior[cite: 4]
+    } else if(!(*pte & PTE_W)) {
+      // [DIFERENCIA 3]: Si no es COW y tampoco tiene permiso de escritura (ej. memoria de solo lectura), debe fallar
+      return -1;
     }
 
     pa0 = PTE2PA(*pte);
