@@ -8,6 +8,8 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#define PA2INDEX(pa) (((uint64)(pa) - KERNBASE) / PGSIZE)
+#define MAX_PAGES    ((PHYSTOP - KERNBASE) / PGSIZE)
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -23,11 +25,44 @@ struct {
   struct run *freelist;
 } kmem;
 
+
+struct spinlock ref_lock;
+int ref_count[MAX_PAGES];
+
+void
+ref_init(void)
+{
+  initlock(&ref_lock, "ref_lock");
+}
+
+void
+inc_ref(uint64 pa)
+{
+  int idx = PA2INDEX(pa);
+  acquire(&ref_lock);
+  ref_count[idx]++;
+  release(&ref_lock);
+}
+
+int
+dec_ref(uint64 pa)
+{
+  int idx = PA2INDEX(pa);
+  int count;
+  acquire(&ref_lock);
+  ref_count[idx]--;
+  count = ref_count[idx];
+  release(&ref_lock);
+  return count;
+}
+
+
 void
 kinit()
 {
+  ref_init(); // Inicializar el cerrojo del contador
   initlock(&kmem.lock, "kmem");
-  freerange(end, (void *)PHYSTOP);
+  freerange(end, (void*)PHYSTOP);
 }
 
 void
@@ -48,15 +83,17 @@ kfree(void *pa)
 {
   struct run *r;
 
-  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
+  // Decrementar contador. Si aún hay procesos apuntando a la página, no liberar.
+  if(dec_ref((uint64)pa) > 0)
+    return;
+
   memset(pa, 1, PGSIZE);
 
-  r = (struct run *)pa;
-
   acquire(&kmem.lock);
+  r = (struct run*)pa;
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -72,13 +109,18 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if (r)
+  if(r)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if (r)
-    memset((char *)r, 5, PGSIZE); // fill with junk
-  return (void *)r;
+  if(r) {
+    memset((char*)r, 5, PGSIZE); // Llenar con basura
+    int idx = PA2INDEX((uint64)r);
+    acquire(&ref_lock);
+    ref_count[idx] = 1; // La nueva página inicia con 1 referencia
+    release(&ref_lock);
+  }
+  return (void*)r;
 }
 
 

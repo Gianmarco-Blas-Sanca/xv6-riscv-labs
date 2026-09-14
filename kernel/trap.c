@@ -68,29 +68,41 @@ usertrap(void)
     syscall();
   }else if((which_dev = devintr()) != 0){
     // ok
-  }else if(r_scause() == 13 ||r_scause() == 15) { // 13: Load Page Fault, 15: Store Page Fault
-      uint64 va = r_stval(); // Direccion virtual que detono el trap
+  }else if(r_scause() == 15) { 
+    uint64 va = r_stval(); 
 
-    // Correccion 1: Validacion de limites de memoria
+    // 1. Validar limites de la memoria del proceso
     if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp)) {
       p->killed = 1;
     } else {
-      char *mem = kalloc();
-      if(mem == 0) {
-        p->killed = 1;
-      } else {
-        memset(mem, 0, PGSIZE);
-        uint64 a = PGROUNDDOWN(va);
+      pte_t *pte = walk(p->pagetable, va, 0);
 
-        // Correccion 2: Permisos completos con PTE_U y comprobacion de fallo
-        if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_U | PTE_V) != 0) {
-          kfree(mem);
+      // 2. Verificar que la PTE exista, sea de usuario y tenga la bandera PTE_COW activa
+      if(pte != 0 && (*pte & PTE_V) && (*pte & PTE_U) && (*pte & PTE_COW)) {
+        uint64 pa = PTE2PA(*pte);
+        char *mem = kalloc();
+        if(mem == 0) {
           p->killed = 1;
+        } else {
+          // Copiar exactamente el contenido de la pagina compartida a la nueva
+          memmove(mem, (char*)pa, PGSIZE);
+
+          // Habilitar escritura (PTE_W) y quitar la bandera COW
+          uint flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+
+          // Re-mapear la entrada de la tabla de paginas apuntando a la nueva direccion fisica
+          *pte = PA2PTE(mem) | flags;
+
+          // Decrementar referencia de la pagina anterior (se liberara si llega a 0)
+          kfree((void*)pa);
+        }
+      } else {
+        p->killed = 1;
       }
     }
   }
     // page fault on lazily-allocated page
-  } else {
+   else {
     printk("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printk("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);

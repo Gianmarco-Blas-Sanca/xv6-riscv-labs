@@ -60,6 +60,9 @@ void            ireclaim(int);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+void            ref_init(void);
+void            inc_ref(uint64);
+int             dec_ref(uint64);
 uint64          count_free_bytes(void);
 // log.c
 void            initlog(int, struct superblock*);

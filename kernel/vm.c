@@ -306,31 +306,40 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
-  for (i = 0; i < sz; i += PGSIZE) {
-    if ((pte = walk(old, i, 0)) == 0)
-      continue; // page table entry hasn't been allocated
-    if ((*pte & PTE_V) == 0)
-      continue; // physical page hasn't been allocated
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+
+    // Si la página se podía escribir, quitar PTE_W y agregar PTE_COW
+    if(*pte & PTE_W){
+      *pte &= ~PTE_W;
+      *pte |= PTE_COW;
+    }
+
     flags = PTE_FLAGS(*pte);
-    if ((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char *)pa, PGSIZE);
-    if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0) {
-      kfree(mem);
+
+    // Mapear la misma página física en el nuevo espacio de direcciones (hijo)
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
+
+    // Incrementar el contador de referencias de la página física
+    inc_ref(pa);
   }
   return 0;
 
-err:
+ err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
+
 }
 
 // mark a PTE invalid for user access.
@@ -352,28 +361,30 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 psz, uint64 dstva, char *src, uint64 len)
 {
-  uint64 n, va0, pa0;
+   uint64 n, va0, pa0;
   pte_t *pte;
 
-  while (len > 0) {
+  while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    if (va0 >= MAXVA)
+    pte = walk(pagetable, va0, 0);
+    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
       return -1;
 
-    pa0 = walkaddr(pagetable, va0);
-    if (pa0 == 0) {
-      if ((pa0 = vmfault(pagetable, psz, va0, 0)) == 0) {
+    // Si la página del usuario es COW, resolver duplicación antes de escribir
+    if(*pte & PTE_COW){
+      uint64 pa = PTE2PA(*pte);
+      char *mem = kalloc();
+      if(mem == 0)
         return -1;
-      }
+      memmove(mem, (char*)pa, PGSIZE);
+      uint flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+      *pte = PA2PTE(mem) | flags;
+      kfree((void*)pa);
     }
 
-    pte = walk(pagetable, va0, 0);
-    // forbid copyout over read-only user text pages.
-    if ((*pte & PTE_W) == 0)
-      return -1;
-
+    pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
-    if (n > len)
+    if(n > len)
       n = len;
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 
